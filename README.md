@@ -4,6 +4,8 @@ A fun simulation inspired by *Resident evil 2 & 3* main PC access for unlock RPD
 
 ![alt text](screen_re2a.png)
 
+![alt text](screen_re2b.png)
+
 ![alt text](screen_re3a.png)
 
 ![alt text](screen_re3b.png)
@@ -48,6 +50,8 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 pip install -r requirements.txt
 
 python re2_skycard.py
+
+python re2_guest.py
 
 python re3_notice.py
 

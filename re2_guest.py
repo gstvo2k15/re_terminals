@@ -204,7 +204,7 @@ def draw_window(surface, rect, title="PROGRAM(1:1)", scene_base=None, plain_fill
 
 class KeyboardWindow:
     def __init__(self):
-        self.rect = pygame.Rect(185, 548, 910, 190)
+        self.rect = pygame.Rect(185, 520, 910, 190)
         self.grid = [
             ["ESC", "A", "B", "C", "D", "E", "F", "G", "H", "BACK"],
             ["I", "J", "K", "L", "M", "N", "O", "P", "Q", "ENTER"],
