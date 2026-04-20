@@ -17,6 +17,8 @@ SND_CHOOSE = BASE_DIR / "safsprin_chosing_single_letters_pc.mp3"
 SND_ENTER = BASE_DIR / "safsprin_enter_passwd_pc.mp3"
 SND_FINISH = BASE_DIR / "safsprin_finish_passwd_pc.mp3"
 
+VALID_USERNAME = "GUEST"
+
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
 pygame.mixer.init()
@@ -202,7 +204,7 @@ def draw_window(surface, rect, title="PROGRAM(1:1)", scene_base=None, plain_fill
 
 class KeyboardWindow:
     def __init__(self):
-        self.rect = pygame.Rect(205, 767, 930, 282)
+        self.rect = pygame.Rect(185, 548, 910, 190)
         self.grid = [
             ["ESC", "A", "B", "C", "D", "E", "F", "G", "H", "BACK"],
             ["I", "J", "K", "L", "M", "N", "O", "P", "Q", "ENTER"],
@@ -306,7 +308,7 @@ class App:
 
         self.selector_rect = pygame.Rect(44, 111, 341, 143)
 
-        self.target_rect = pygame.Rect(52, 53, 1053, 671)
+        self.target_rect = pygame.Rect(52, 53, 1053, 560)
         self.grow_origin = (130, 135)
         self.grow_start_size = (120, 90)
         self.grow_duration = 0.32
@@ -346,6 +348,7 @@ class App:
         self.cursor_timer = 0.0
         self.cursor_on = True
         self.input_locked = False
+        self.input_line_active = False
 
         self.keyboard = KeyboardWindow()
 
@@ -358,6 +361,12 @@ class App:
         self.open_sound_duration = snd_open.get_length()
         self.open_sound_elapsed = 0.0
         self.use_normal_letters_after_open = False
+
+        self.flash_timer = 0.0
+        self.flash_alpha = 0
+
+        self.finish_waiting_to_start = False
+        self.finish_has_started_playing = False
 
         self.result_phase = 0
         self.result_pause_timer = 0.0
@@ -496,26 +505,47 @@ class App:
             self.open_sound_started = False
             self.open_sound_elapsed = 0.0
             self.use_normal_letters_after_open = False
+            self.input_line_active = False
             self.start_open_sequence()
 
         elif new_state == "name_entry":
             self.cursor_timer = 0.0
             self.cursor_on = True
-            self.input_text = "GUEST"
+            self.input_text = ""
             self.keyboard = KeyboardWindow()
             self.input_locked = False
+            self.input_line_active = True
+            if not self.visible_lines or self.visible_lines[-1] != "":
+                self.visible_lines.append("")
 
         elif new_state == "submitting":
             self.input_locked = True
+            self.input_line_active = False
+            self.finish_waiting_to_start = True
+            self.finish_has_started_playing = False
             play_finish()
 
         elif new_state == "typing_result":
             self.visible_lines = [""]
             self.result_phase = 0
             self.result_pause_timer = 0.0
+            self.input_line_active = False
+
+        elif new_state == "invalid":
+            self.flash_timer = 0.35
+            self.flash_alpha = 90
+            self.input_locked = True
+            self.input_line_active = False
 
         elif new_state == "done":
             self.cursor_on = False
+            self.input_line_active = False
+
+    def submit_username(self):
+        if self.input_text == VALID_USERNAME:
+            self.set_state("submitting")
+        else:
+            self.set_state("invalid")
 
     def activate_key(self):
         if self.input_locked:
@@ -535,11 +565,11 @@ class App:
 
         if label == "ENTER":
             if self.input_text:
-                self.set_state("submitting")
+                self.submit_username()
             return
 
         if len(label) == 1 and label.isalpha():
-            if len(self.input_text) < 8:
+            if len(self.input_text) < len(VALID_USERNAME):
                 self.input_text += label
                 play_enter()
 
@@ -605,6 +635,16 @@ class App:
             if self.choose_sound_cooldown < 0:
                 self.choose_sound_cooldown = 0.0
 
+        if self.flash_timer > 0:
+            self.flash_timer -= dt
+            if self.flash_timer <= 0:
+                self.flash_timer = 0.0
+                self.flash_alpha = 0
+                if self.state == "invalid":
+                    self.input_text = ""
+                    self.set_state("name_entry")
+                    return
+
         if self.state == "selector":
             if self.state_timer >= self.selector_duration:
                 self.set_state("grow")
@@ -624,8 +664,14 @@ class App:
             self.keyboard.update(dt)
 
         elif self.state == "submitting":
-            if not finish_channel.get_busy() and self.state_timer > 0.05:
-                self.set_state("typing_result")
+            if self.finish_waiting_to_start:
+                if finish_channel.get_busy():
+                    self.finish_waiting_to_start = False
+                    self.finish_has_started_playing = True
+            elif self.finish_has_started_playing:
+                if not finish_channel.get_busy():
+                    self.finish_has_started_playing = False
+                    self.set_state("typing_result")
 
         elif self.state == "typing_result":
             if self.result_pause_timer > 0:
@@ -645,11 +691,16 @@ class App:
     def draw_program_lines(self, inner_rect):
         x_pos = inner_rect.x + 18
         y_pos = inner_rect.y + 10
-        line_height = 62
+        line_height = 50
 
-        for item in self.visible_lines:
+        for idx, item in enumerate(self.visible_lines):
             if isinstance(item, str):
-                draw_shadow_text(screen, font_term, item, WHITE_DIRTY, SHADOW, (x_pos, y_pos))
+                text = item
+                if self.input_line_active and idx == len(self.visible_lines) - 1:
+                    text = "> " + self.input_text
+                    if self.cursor_on and not self.input_locked:
+                        text += "_"
+                draw_shadow_text(screen, font_term, text, WHITE_DIRTY, SHADOW, (x_pos, y_pos))
             else:
                 if len(item) == 2:
                     txt, color = item
@@ -660,16 +711,6 @@ class App:
                     right_w = font_term.size(right_txt)[0]
                     draw_shadow_text(screen, font_term, right_txt, right_col, SHADOW, (inner_rect.right - 18 - right_w, y_pos))
             y_pos += line_height
-
-        if self.state == "name_entry":
-            prompt_y = inner_rect.y + 10 + len(self.visible_lines) * line_height
-            prompt_x = inner_rect.x + 18
-            draw_shadow_text(screen, font_term, ">", WHITE_DIRTY, SHADOW, (prompt_x, prompt_y))
-            input_x = prompt_x + font_term.size(">")[0] + 8
-            draw_shadow_text(screen, font_term, self.input_text, WHITE_DIRTY, SHADOW, (input_x, prompt_y))
-            if self.cursor_on and not self.input_locked:
-                input_w = font_term.size(self.input_text)[0]
-                draw_shadow_text(screen, font_term, "_", WHITE_DIRTY, SHADOW, (input_x + input_w, prompt_y))
 
     def render(self):
         scene_base = build_scene_base()
@@ -686,6 +727,11 @@ class App:
 
         if self.state == "name_entry":
             self.keyboard.draw(screen)
+
+        if self.flash_alpha > 0:
+            overlay = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            overlay.fill((255, 255, 255, int(self.flash_alpha)))
+            screen.blit(overlay, (0, 0))
 
         draw_scanlines(screen, alpha=18, step=2)
 
