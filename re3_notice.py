@@ -10,7 +10,7 @@ SCREEN_W = 1280
 SCREEN_H = 720
 FPS = 60
 
-BG_IMAGE = BASE_DIR / "Skycard_hd_0.png"
+BG_IMAGE = BASE_DIR / "Skycard_hd.png"
 
 SND_MAIN = BASE_DIR / "beep_main.mp3"
 SND_WAITING = BASE_DIR / "beep_waitting.mp3"
