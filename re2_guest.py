@@ -278,13 +278,13 @@ class KeyboardWindow:
         x_inner = x_right - 5
 
         y_top = rect.y + 20
-        y_base_top = rect.bottom - 36
-        y_base_bottom = rect.bottom - 31
+        y_base_top = rect.bottom - 35
+        y_base_bottom = rect.bottom - 30
 
-        x_base_left = rect.centerx - 7
-        x_notch_outer = rect.centerx - 18   # MÁS CERCA -> diagonal corta
-        y_notch_top = rect.bottom - 41
-        y_notch_bottom = rect.bottom - 38
+        x_base_left = rect.centerx - 6
+        x_notch_outer = rect.centerx - 16
+        y_notch_top = rect.bottom - 40
+        y_notch_bottom = rect.bottom - 37
 
         points = [
             (x_inner, y_top),
@@ -292,7 +292,7 @@ class KeyboardWindow:
             (x_right, y_base_bottom),
             (x_base_left, y_base_bottom),
             (x_notch_outer, y_notch_bottom),
-            (x_notch_outer + 3, y_notch_top),  # punta más compacta
+            (x_notch_outer + 2, y_notch_top),
             (x_base_left + 2, y_base_top),
             (x_inner, y_base_top),
         ]
