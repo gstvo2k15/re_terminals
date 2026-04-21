@@ -274,21 +274,30 @@ class KeyboardWindow:
         return self.grid[self.row][self.col]
 
     def draw_enter_symbol(self, surface, rect):
-        stroke = 4
+        x_right = rect.centerx + 15
+        x_inner = x_right - 5
 
-        x_vertical = rect.centerx + 16
-        y_top = rect.y + 24
-        y_corner = rect.bottom - 42
+        y_top = rect.y + 20
+        y_base_top = rect.bottom - 37
+        y_base_bottom = rect.bottom - 32
 
-        x_corner = rect.centerx - 2
-        y_corner_flat = y_corner
+        x_base_left = rect.centerx - 8
+        x_notch_outer = rect.centerx - 21
+        y_notch_top = rect.bottom - 43
+        y_notch_bottom = rect.bottom - 39
 
-        x_tip = rect.centerx - 22
-        y_tip = rect.bottom - 56
+        points = [
+            (x_inner, y_top),
+            (x_right, y_top),
+            (x_right, y_base_bottom),
+            (x_base_left, y_base_bottom),
+            (x_notch_outer, y_notch_bottom),
+            (x_notch_outer + 4, y_notch_top),
+            (x_base_left + 2, y_base_top),
+            (x_inner, y_base_top),
+        ]
 
-        pygame.draw.line(surface, KEY_TEXT, (x_vertical, y_top), (x_vertical, y_corner), stroke)
-        pygame.draw.line(surface, KEY_TEXT, (x_vertical, y_corner), (x_corner, y_corner_flat), stroke)
-        pygame.draw.line(surface, KEY_TEXT, (x_corner, y_corner_flat), (x_tip, y_tip), stroke)
+        pygame.draw.polygon(surface, KEY_TEXT, points)
 
     def draw(self, surface):
         inner = draw_window(surface, self.rect, "KEYBOARD(1:1)", plain_fill=True)
