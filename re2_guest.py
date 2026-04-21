@@ -38,8 +38,8 @@ KEY_FILL_BLINK_HIGH = (188, 188, 188)
 KEY_TEXT = (68, 68, 68)
 BLACK = (0, 0, 0)
 
-font_title = pygame.font.SysFont("couriernew", 26, bold=True)
-font_term = pygame.font.SysFont("couriernew", 34, bold=True)
+font_title = pygame.font.SysFont("couriernew", 28, bold=True)
+font_term = pygame.font.SysFont("couriernew", 30, bold=True)
 font_key = pygame.font.SysFont("arial", 24, bold=True)
 font_key_small = pygame.font.SysFont("arial", 16, bold=True)
 
