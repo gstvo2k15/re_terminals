@@ -281,10 +281,10 @@ class KeyboardWindow:
         y_base_top = rect.bottom - 35
         y_base_bottom = rect.bottom - 30
 
-        x_base_left = rect.centerx - 6
-        x_notch_outer = rect.centerx - 16
-        y_notch_top = rect.bottom - 40
-        y_notch_bottom = rect.bottom - 37
+        x_base_left = rect.centerx - 5
+        x_notch_outer = rect.centerx - 14
+        y_notch_top = rect.bottom - 39
+        y_notch_bottom = rect.bottom - 36
 
         points = [
             (x_inner, y_top),
