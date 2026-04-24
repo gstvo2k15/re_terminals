@@ -152,7 +152,7 @@ def draw_window(
     surface: pygame.Surface,
     rect: pygame.Rect,
     scene_base: pygame.Surface,
-    title: str = "PROGRAM(011)",
+    title: str = "PROGRAM(1:1)",
 ) -> pygame.Rect:
     x_pos, y_pos, width, height = rect
 
@@ -689,7 +689,7 @@ class App:
 
         if self.state != "idle_bg":
             rect = self.current_window_rect()
-            inner_rect = draw_window(screen, rect, scene_base, "PROGRAM(011)")
+            inner_rect = draw_window(screen, rect, scene_base, "PROGRAM(1:1)")
 
             if rect.w > 300 and rect.h > 140 and self.state != "grow":
                 self.draw_lines(inner_rect)
