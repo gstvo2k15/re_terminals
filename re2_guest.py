@@ -208,7 +208,7 @@ class KeyboardWindow:
         self.grid = [
             ["ESC", "A", "B", "C", "D", "E", "F", "G", "H", "BACK"],
             ["I", "J", "K", "L", "M", "N", "O", "P", "Q", "ENTER"],
-            ["R", "S", "T", "U", "V", "W", "X", "Y", "Z", "ENTER"],
+            ["R", "S", "T", "U", "V", "W", "X", "Y", "Z", None],
         ]
         self.row = 0
         self.col = 1
@@ -222,17 +222,44 @@ class KeyboardWindow:
             self.blink_timer = 0.0
             self.blink_on = not self.blink_on
 
+    def _is_enter_selected(self):
+        return (self.row == 1 and self.col == 9) or (self.row == 2 and self.col == 9)
+
     def move(self, dx, dy):
         old_row = self.row
         old_col = self.col
 
         if dy != 0:
-            self.row = max(0, min(2, self.row + dy))
+            if self._is_enter_selected():
+                if dy < 0:
+                    self.row = 0
+                    self.col = 8
+                elif dy > 0:
+                    self.row = 2
+                    self.col = 9
+            else:
+                target_row = max(0, min(2, self.row + dy))
+                if self.row == 1 and self.col == 9 and dy > 0:
+                    self.row = 2
+                    self.col = 9
+                else:
+                    self.row = target_row
 
         if dx != 0:
-            self.col = max(0, min(9, self.col + dx))
+            if self.row == 2 and self.col == 8 and dx > 0:
+                self.row = 2
+                self.col = 9
+            elif self._is_enter_selected() and dx < 0:
+                self.row = 2
+                self.col = 8
+            else:
+                self.col = max(0, min(9, self.col + dx))
+                if self.row == 0 and self.col == 9:
+                    self.col = 8
+                if self.row == 2 and self.col == 9 and dx > 0:
+                    self.col = 9
 
-        if self.row == 2 and self.col == 9:
+        if self.row == 0 and self.col == 9:
             self.col = 8
 
         moved = old_row != self.row or old_col != self.col
@@ -242,7 +269,35 @@ class KeyboardWindow:
         return moved
 
     def get_label(self):
+        if self._is_enter_selected():
+            return "ENTER"
         return self.grid[self.row][self.col]
+
+    def draw_enter_symbol(self, surface, rect):
+        x_right = rect.centerx + 15
+        x_inner = x_right - 5
+
+        y_top = rect.y + 20
+        y_base_top = rect.bottom - 35
+        y_base_bottom = rect.bottom - 30
+
+        x_base_left = rect.centerx - 5
+        x_notch_outer = rect.centerx - 14
+        y_notch_top = rect.bottom - 39
+        y_notch_bottom = rect.bottom - 36
+
+        points = [
+            (x_inner, y_top),
+            (x_right, y_top),
+            (x_right, y_base_bottom),
+            (x_base_left, y_base_bottom),
+            (x_notch_outer, y_notch_bottom),
+            (x_notch_outer + 2, y_notch_top),
+            (x_base_left + 2, y_base_top),
+            (x_inner, y_base_top),
+        ]
+
+        pygame.draw.polygon(surface, KEY_TEXT, points)
 
     def draw(self, surface):
         inner = draw_window(surface, self.rect, "KEYBOARD(1:1)", plain_fill=True)
@@ -265,11 +320,16 @@ class KeyboardWindow:
                 width = cell_w
                 height = cell_h
 
-                if label == "ENTER":
+                is_enter = row_idx == 1 and col_idx == 9
+                if is_enter:
                     height = cell_h * 2 + gap
 
                 rect = pygame.Rect(x_pos, y_pos, width, height)
-                selected = row_idx == self.row and col_idx == self.col
+
+                if is_enter:
+                    selected = self._is_enter_selected()
+                else:
+                    selected = row_idx == self.row and col_idx == self.col
 
                 if selected:
                     fill = KEY_FILL_BLINK_HIGH if self.blink_on else KEY_FILL_BLINK_LOW
@@ -291,10 +351,9 @@ class KeyboardWindow:
                     txt_surface = font_key.render(label, True, KEY_TEXT)
                     txt_rect = txt_surface.get_rect(center=rect.center)
                     surface.blit(txt_surface, txt_rect)
-                elif label == "ENTER":
-                    pygame.draw.line(surface, KEY_TEXT, (rect.centerx + 14, rect.bottom - 20), (rect.centerx - 6, rect.bottom - 20), 4)
-                    pygame.draw.line(surface, KEY_TEXT, (rect.centerx - 6, rect.bottom - 20), (rect.centerx + 14, rect.bottom - 40), 4)
-                else:
+                elif is_enter:
+                    self.draw_enter_symbol(surface, rect)
+                elif label is not None:
                     txt_surface = font_key.render(label, True, KEY_TEXT)
                     txt_rect = txt_surface.get_rect(center=rect.center)
                     surface.blit(txt_surface, txt_rect)
@@ -697,7 +756,7 @@ class App:
             if isinstance(item, str):
                 text = item
                 if self.input_line_active and idx == len(self.visible_lines) - 1:
-                    text = "> " + self.input_text
+                    text = ">" + self.input_text
                     if self.cursor_on and not self.input_locked:
                         text += "_"
                 draw_shadow_text(screen, font_term, text, WHITE_DIRTY, SHADOW, (x_pos, y_pos))

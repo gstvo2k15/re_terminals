@@ -152,36 +152,16 @@ def draw_window(
     surface: pygame.Surface,
     rect: pygame.Rect,
     scene_base: pygame.Surface,
-    title: str = "PROGRAM(011)",
+    title: str = "PROGRAM(1:1)",
 ) -> pygame.Rect:
     x_pos, y_pos, width, height = rect
 
     pygame.draw.rect(surface, FRAME_MID, rect)
     pygame.draw.rect(surface, FRAME_DARK, rect, 2)
-    pygame.draw.line(
-        surface,
-        WHITE_DIRTY,
-        (x_pos + 1, y_pos + 1),
-        (x_pos + width - 2, y_pos + 1),
-    )
-    pygame.draw.line(
-        surface,
-        WHITE_DIRTY,
-        (x_pos + 1, y_pos + 1),
-        (x_pos + 1, y_pos + height - 2),
-    )
-    pygame.draw.line(
-        surface,
-        FRAME_DARK,
-        (x_pos, y_pos + height - 1),
-        (x_pos + width - 1, y_pos + height - 1),
-    )
-    pygame.draw.line(
-        surface,
-        FRAME_DARK,
-        (x_pos + width - 1, y_pos),
-        (x_pos + width - 1, y_pos + height - 1),
-    )
+    pygame.draw.line(surface, WHITE_DIRTY, (x_pos + 1, y_pos + 1), (x_pos + width - 2, y_pos + 1))
+    pygame.draw.line(surface, WHITE_DIRTY, (x_pos + 1, y_pos + 1), (x_pos + 1, y_pos + height - 2))
+    pygame.draw.line(surface, FRAME_DARK, (x_pos, y_pos + height - 1), (x_pos + width - 1, y_pos + height - 1))
+    pygame.draw.line(surface, FRAME_DARK, (x_pos + width - 1, y_pos), (x_pos + width - 1, y_pos + height - 1))
 
     bar_height = max(24, int(height * 0.05))
     title_rect = pygame.Rect(x_pos + 4, y_pos + 4, width - 8, bar_height)
@@ -190,36 +170,18 @@ def draw_window(
 
     button_width = 18
     left_button = pygame.Rect(x_pos + 8, y_pos + 7, button_width, bar_height - 6)
-    right_button = pygame.Rect(
-        x_pos + width - 8 - button_width,
-        y_pos + 7,
-        button_width,
-        bar_height - 6,
-    )
+    right_button = pygame.Rect(x_pos + width - 8 - button_width, y_pos + 7, button_width, bar_height - 6)
+
     pygame.draw.rect(surface, FRAME_MID, left_button)
     pygame.draw.rect(surface, FRAME_MID, right_button)
     pygame.draw.rect(surface, FRAME_DARK, left_button, 1)
     pygame.draw.rect(surface, FRAME_DARK, right_button, 1)
 
-    pygame.draw.line(
-        surface,
-        BLACK,
-        (left_button.x + 4, left_button.centery),
-        (left_button.right - 4, left_button.centery),
-        2,
-    )
-    pygame.draw.line(
-        surface,
-        BLACK,
-        (right_button.x + 4, right_button.centery),
-        (right_button.right - 4, right_button.centery),
-        2,
-    )
+    pygame.draw.line(surface, BLACK, (left_button.x + 4, left_button.centery), (left_button.right - 4, left_button.centery), 2)
+    pygame.draw.line(surface, BLACK, (right_button.x + 4, right_button.centery), (right_button.right - 4, right_button.centery), 2)
 
     title_surface = font_title.render(title, True, (80, 80, 80))
-    title_pos = title_surface.get_rect(
-        center=(x_pos + width // 2, y_pos + 4 + bar_height // 2)
-    )
+    title_pos = title_surface.get_rect(center=(x_pos + width // 2, y_pos + 4 + bar_height // 2))
     surface.blit(title_surface, title_pos)
 
     pad = 6
@@ -292,9 +254,14 @@ class App:
         self.grow_duration = 0.55
         self.idle_bg_duration = 0.65
 
+        self.pause_before_question = 0.85
+
         self.visible_lines = []
-        self.line_index = 0
-        self.char_index = 0
+        self.current_block = []
+        self.block_index = 0
+        self.block_char = 0
+        self.block_done = False
+
         self.typing_speed = 0.060
         self.typing_accum = 0.0
 
@@ -329,18 +296,71 @@ class App:
         y_pos = int(lerp(self.grow_origin[1], self.target_rect.y, factor))
         return pygame.Rect(x_pos, y_pos, width, height)
 
-    def reset_typing(self) -> None:
-        self.visible_lines = [""]
-        self.line_index = 0
-        self.char_index = 0
+    def begin_block(self, block_lines) -> None:
+        self.current_block = block_lines
+        self.block_index = 0
+        self.block_char = 0
+        self.block_done = False
         self.typing_accum = 0.0
+
+        if not self.visible_lines:
+            self.visible_lines = [""]
+
+    def finalize_current_line(self, line) -> None:
+        if len(line) in (4, 6):
+            self.visible_lines[-1] = line
+            play_type_sound()
+        else:
+            if isinstance(self.visible_lines[-1], str):
+                self.visible_lines[-1] = (self.visible_lines[-1], line[1])
+            else:
+                self.visible_lines[-1] = line
+
+    def update_typing_block(self, dt: float) -> None:
+        if self.block_done:
+            return
+
+        self.typing_accum += dt
+
+        while self.typing_accum >= self.typing_speed and not self.block_done:
+            self.typing_accum -= self.typing_speed
+
+            if self.block_index >= len(self.current_block):
+                self.block_done = True
+                break
+
+            line = self.current_block[self.block_index]
+            text = line[0]
+
+            if self.block_char < len(text):
+                char = text[self.block_char]
+
+                if not isinstance(self.visible_lines[-1], str):
+                    self.visible_lines.append("")
+
+                self.visible_lines[-1] += char
+                self.block_char += 1
+
+                if char != " ":
+                    play_type_sound()
+
+            else:
+                self.finalize_current_line(line)
+                self.block_index += 1
+                self.block_char = 0
+
+                if self.block_index < len(self.current_block):
+                    self.visible_lines.append("")
+                else:
+                    self.block_done = True
 
     def set_state(self, new_state: str) -> None:
         self.state = new_state
         self.state_timer = 0.0
 
         if new_state == "typing":
-            self.reset_typing()
+            self.visible_lines = [""]
+            self.begin_block(self.base_lines)
 
         elif new_state == "question":
             self.question_char_index_1 = 0
@@ -370,39 +390,9 @@ class App:
             self.subtitle_visible += self.subtitle[self.subtitle_index]
             self.subtitle_index += 1
 
-    def update_typing(self, dt: float) -> None:
-        if self.line_index >= len(self.base_lines):
-            return
-
-        self.typing_accum += dt
-        while self.typing_accum >= self.typing_speed:
-            self.typing_accum -= self.typing_speed
-
-            line = self.base_lines[self.line_index]
-            base_text = line[0]
-
-            if self.char_index < len(base_text):
-                char = base_text[self.char_index]
-                self.visible_lines[-1] += char
-                self.char_index += 1
-
-                if char != " ":
-                    play_type_sound()
-            else:
-                if len(line) in (4, 6):
-                    self.visible_lines[-1] = line
-                    play_type_sound()
-                else:
-                    self.visible_lines[-1] = (self.visible_lines[-1], line[1])
-
-                self.line_index += 1
-                self.char_index = 0
-
-                if self.line_index < len(self.base_lines):
-                    self.visible_lines.append("")
-
     def update_question_typing(self, dt: float) -> None:
         self.question_accum += dt
+
         while self.question_accum >= self.question_speed:
             self.question_accum -= self.question_speed
 
@@ -421,7 +411,7 @@ class App:
     def build_lines_for_current_state(self):
         lines = self.base_lines[:]
 
-        if self.state in ("typing", "question"):
+        if self.state in ("typing", "pause_before_question", "question"):
             return lines
 
         if self.state == "checking":
@@ -433,6 +423,18 @@ class App:
             return prefix + CHECKING_REPLACEMENT_LINES + DONE_LINES
 
         return lines
+
+    def skip_typing_to_question(self) -> None:
+        self.visible_lines = []
+
+        for line in self.base_lines:
+            if len(line) in (4, 6):
+                self.visible_lines.append(line)
+            else:
+                self.visible_lines.append((line[0], line[1]))
+
+        self.block_done = True
+        self.set_state("question")
 
     def update(self, dt: float) -> None:
         self.state_timer += dt
@@ -447,8 +449,12 @@ class App:
                 self.set_state("typing")
 
         elif self.state == "typing":
-            self.update_typing(dt)
-            if self.line_index >= len(self.base_lines) and self.state_timer >= 2.5:
+            self.update_typing_block(dt)
+            if self.block_done:
+                self.set_state("pause_before_question")
+
+        elif self.state == "pause_before_question":
+            if self.state_timer >= self.pause_before_question:
                 self.set_state("question")
 
         elif self.state == "question":
@@ -473,17 +479,9 @@ class App:
                 self.running = False
                 return
 
-            if self.state == "typing":
+            if self.state in ("typing", "pause_before_question"):
                 if event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    self.visible_lines = []
-                    for line in self.base_lines:
-                        if len(line) in (4, 6):
-                            self.visible_lines.append(line)
-                        else:
-                            self.visible_lines.append((line[0], line[1]))
-                    self.line_index = len(self.base_lines)
-                    self.char_index = 0
-                    self.state_timer = 999
+                    self.skip_typing_to_question()
 
             elif self.state == "question":
                 if event.key in (pygame.K_LEFT, pygame.K_a):
@@ -521,7 +519,7 @@ class App:
         )
 
     def draw_lines(self, inner_rect: pygame.Rect) -> None:
-        if self.state in ("typing", "question"):
+        if self.state in ("typing", "pause_before_question", "question"):
             items = self.visible_lines
         else:
             items = self.build_lines_for_current_state()
@@ -533,121 +531,40 @@ class App:
         for idx, item in enumerate(items):
             if self.state == "checking" and idx == self.replace_start_index:
                 dynamic_text = f"Checking up ID-CARD{'.' * self.checking_dots}"
-                draw_shadow_text(
-                    screen,
-                    font_term,
-                    dynamic_text,
-                    WHITE_DIRTY,
-                    SHADOW,
-                    (x_pos, y_pos),
-                )
-            else:
-                if isinstance(item, str):
-                    draw_shadow_text(
-                        screen,
-                        font_term,
-                        item,
-                        WHITE_DIRTY,
-                        SHADOW,
-                        (x_pos, y_pos),
-                    )
-                else:
-                    if len(item) == 2:
-                        text, color = item
-                        draw_shadow_text(
-                            screen,
-                            font_term,
-                            text,
-                            color,
-                            SHADOW,
-                            (x_pos, y_pos),
-                        )
-                    elif len(item) == 4:
-                        left_text, left_color, right_text, right_color = item
-                        draw_shadow_text(
-                            screen,
-                            font_term,
-                            left_text,
-                            left_color,
-                            SHADOW,
-                            (x_pos, y_pos),
-                        )
-                        left_width = font_term.size(left_text)[0]
-                        draw_shadow_text(
-                            screen,
-                            font_term,
-                            right_text,
-                            right_color,
-                            GREEN_DARK,
-                            (x_pos + left_width, y_pos),
-                        )
-                    elif len(item) == 6:
-                        left_text, left_color, mid_text, mid_color, right_text, right_color = item
-                        draw_shadow_text(
-                            screen,
-                            font_term,
-                            left_text,
-                            left_color,
-                            SHADOW,
-                            (x_pos, y_pos),
-                        )
-                        offset = font_term.size(left_text)[0]
-                        draw_shadow_text(
-                            screen,
-                            font_term,
-                            mid_text,
-                            mid_color,
-                            GREEN_DARK,
-                            (x_pos + offset, y_pos),
-                        )
-                        offset += font_term.size(mid_text)[0]
-                        draw_shadow_text(
-                            screen,
-                            font_term,
-                            right_text,
-                            right_color,
-                            SHADOW,
-                            (x_pos + offset, y_pos),
-                        )
+                draw_shadow_text(screen, font_term, dynamic_text, WHITE_DIRTY, SHADOW, (x_pos, y_pos))
+
+            elif isinstance(item, str):
+                draw_shadow_text(screen, font_term, item, WHITE_DIRTY, SHADOW, (x_pos, y_pos))
+
+            elif len(item) == 2:
+                text, color = item
+                draw_shadow_text(screen, font_term, text, color, SHADOW, (x_pos, y_pos))
+
+            elif len(item) == 4:
+                left_text, left_color, right_text, right_color = item
+                draw_shadow_text(screen, font_term, left_text, left_color, SHADOW, (x_pos, y_pos))
+                left_width = font_term.size(left_text)[0]
+                draw_shadow_text(screen, font_term, right_text, right_color, GREEN_DARK, (x_pos + left_width, y_pos))
+
+            elif len(item) == 6:
+                left_text, left_color, mid_text, mid_color, right_text, right_color = item
+                draw_shadow_text(screen, font_term, left_text, left_color, SHADOW, (x_pos, y_pos))
+                offset = font_term.size(left_text)[0]
+                draw_shadow_text(screen, font_term, mid_text, mid_color, GREEN_DARK, (x_pos + offset, y_pos))
+                offset += font_term.size(mid_text)[0]
+                draw_shadow_text(screen, font_term, right_text, right_color, SHADOW, (x_pos + offset, y_pos))
+
             y_pos += line_height
 
     def draw_question(self) -> None:
         question_1 = QUESTION_1[:self.question_char_index_1]
         question_2 = QUESTION_2[:self.question_char_index_2]
 
-        draw_shadow_text(
-            screen,
-            font_prompt,
-            question_1,
-            WHITE_SOFT,
-            SHADOW,
-            (90, SCREEN_H - 112),
-        )
-        draw_shadow_text(
-            screen,
-            font_prompt,
-            question_2,
-            GREEN_TEXT,
-            GREEN_DARK,
-            (390, SCREEN_H - 112),
-        )
+        draw_shadow_text(screen, font_prompt, question_1, WHITE_SOFT, SHADOW, (90, SCREEN_H - 112))
+        draw_shadow_text(screen, font_prompt, question_2, GREEN_TEXT, GREEN_DARK, (390, SCREEN_H - 112))
 
-        draw_shadow_text(
-            screen,
-            font_choice,
-            "Yes",
-            WHITE_DIRTY,
-            SHADOW,
-            (760, SCREEN_H - 78),
-        )
-        draw_shadow_text(
-            screen,
-            font_choice,
-            "No",
-            WHITE_DIRTY,
-            SHADOW,
-            (900, SCREEN_H - 78),
-        )
+        draw_shadow_text(screen, font_choice, "Yes", WHITE_DIRTY, SHADOW, (760, SCREEN_H - 78))
+        draw_shadow_text(screen, font_choice, "No", WHITE_DIRTY, SHADOW, (900, SCREEN_H - 78))
 
         if self.selected == 0:
             draw_arrow(screen, 730, SCREEN_H - 66)
@@ -656,32 +573,11 @@ class App:
 
     def draw_bottom_status(self) -> None:
         if self.state == "checking":
-            draw_shadow_text(
-                screen,
-                font_prompt,
-                "Checking card...",
-                WHITE_SOFT,
-                SHADOW,
-                (90, SCREEN_H - 112),
-            )
+            draw_shadow_text(screen, font_prompt, "Checking card...", WHITE_SOFT, SHADOW, (90, SCREEN_H - 112))
 
         elif self.state == "done":
-            draw_shadow_text(
-                screen,
-                font_prompt,
-                "Hall side doors: ",
-                WHITE_SOFT,
-                SHADOW,
-                (90, SCREEN_H - 112),
-            )
-            draw_shadow_text(
-                screen,
-                font_prompt,
-                "UNLOCKED",
-                GREEN_TEXT,
-                GREEN_DARK,
-                (360, SCREEN_H - 112),
-            )
+            draw_shadow_text(screen, font_prompt, "Hall side doors: ", WHITE_SOFT, SHADOW, (90, SCREEN_H - 112))
+            draw_shadow_text(screen, font_prompt, "UNLOCKED", GREEN_TEXT, GREEN_DARK, (360, SCREEN_H - 112))
 
     def render(self) -> None:
         scene_base = build_scene_base()
@@ -689,7 +585,7 @@ class App:
 
         if self.state != "idle_bg":
             rect = self.current_window_rect()
-            inner_rect = draw_window(screen, rect, scene_base, "PROGRAM(011)")
+            inner_rect = draw_window(screen, rect, scene_base, "PROGRAM(1:1)")
 
             if rect.w > 300 and rect.h > 140 and self.state != "grow":
                 self.draw_lines(inner_rect)
