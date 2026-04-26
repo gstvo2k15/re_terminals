@@ -1,5 +1,7 @@
 import sys
 import time
+import math
+import random
 from pathlib import Path
 
 import cv2
@@ -25,7 +27,8 @@ FRAME_DENIED = "RE1_oldPc_15.png"
 FRAME_QUIT = "RE1_oldPc_16.png"
 
 VALID_LOGIN = "JOHN"
-VALID_PASSWORD = "ADA"
+PASSWORD_ADA = "ADA"
+PASSWORD_MOLE = "MOLE"
 
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.init()
@@ -75,9 +78,9 @@ def beep(freq: int = 900, duration_ms: int = 45, volume: float = 0.35) -> None:
 
     for i in range(samples):
         t = i / sample_rate
-        value = int(32767 * volume * __import__("math").sin(2 * __import__("math").pi * freq * t))
-        buf += int(value).to_bytes(2, byteorder="little", signed=True)
-        buf += int(value).to_bytes(2, byteorder="little", signed=True)
+        value = int(32767 * volume * math.sin(2 * math.pi * freq * t))
+        buf += value.to_bytes(2, byteorder="little", signed=True)
+        buf += value.to_bytes(2, byteorder="little", signed=True)
 
     sound = pygame.mixer.Sound(buffer=bytes(buf))
     ui_channel.stop()
@@ -131,7 +134,11 @@ def play_intro_video(path: Path) -> bool:
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame = cv2.resize(frame, (SCREEN_W, SCREEN_H))
 
-        surface = pygame.image.frombuffer(frame.tobytes(), (SCREEN_W, SCREEN_H), "RGB")
+        surface = pygame.image.frombuffer(
+            frame.tobytes(),
+            (SCREEN_W, SCREEN_H),
+            "RGB",
+        )
         screen.blit(surface, (0, 0))
         pygame.display.flip()
 
@@ -145,8 +152,10 @@ def play_intro_video(path: Path) -> bool:
 def draw_scanlines(surface: pygame.Surface, alpha: int = 16, step: int = 2) -> None:
     overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
     width, height = surface.get_size()
+
     for y in range(0, height, step):
         pygame.draw.line(overlay, (0, 0, 0, alpha), (0, y), (width, y))
+
     surface.blit(overlay, (0, 0))
 
 
@@ -189,10 +198,12 @@ class Keyboard:
 
     def move(self, dx, dy):
         old = (self.row, self.col)
+
         self.row = max(0, min(len(self.keys) - 1, self.row + dy))
         self.col = max(0, min(len(self.keys[self.row]) - 1, self.col + dx))
 
         moved = old != (self.row, self.col)
+
         if moved:
             self.blink = True
             self.blink_timer = 0.0
@@ -220,17 +231,36 @@ class Keyboard:
             for c, label in enumerate(row):
                 x = start_x + c * (cell_w + gap)
                 y = start_y + r * (cell_h + gap)
-                w = 150 if label == "ENTER" else 145 if label == "BS" else cell_w
-                h = cell_h
 
+                if label == "ENTER":
+                    w = 150
+                elif label == "BS":
+                    w = 145
+                else:
+                    w = cell_w
+
+                h = cell_h
                 rect = pygame.Rect(x, y, w, h)
                 selected = r == self.row and c == self.col
 
                 fill = (245, 245, 210) if selected and self.blink else (145, 145, 125)
+
                 pygame.draw.rect(screen, fill, rect)
                 pygame.draw.rect(screen, BLACK, rect, 3)
-                pygame.draw.line(screen, WHITE, (rect.x + 2, rect.y + 2), (rect.right - 2, rect.y + 2), 2)
-                pygame.draw.line(screen, WHITE, (rect.x + 2, rect.y + 2), (rect.x + 2, rect.bottom - 2), 2)
+                pygame.draw.line(
+                    screen,
+                    WHITE,
+                    (rect.x + 2, rect.y + 2),
+                    (rect.right - 2, rect.y + 2),
+                    2,
+                )
+                pygame.draw.line(
+                    screen,
+                    WHITE,
+                    (rect.x + 2, rect.y + 2),
+                    (rect.x + 2, rect.bottom - 2),
+                    2,
+                )
 
                 txt = font_key.render(label, True, BLACK)
                 screen.blit(txt, txt.get_rect(center=rect.center))
@@ -243,8 +273,10 @@ class App:
         self.state_timer = 0.0
 
         self.keyboard = Keyboard()
+
         self.login_text = ""
         self.password_text = ""
+
         self.cursor_timer = 0.0
         self.cursor_on = True
 
@@ -252,17 +284,32 @@ class App:
         self.floor_selected = 1
         self.quit_selected = 1
 
+        self.unlocked_floors = set()
+        self.last_floor = "B3"
+
     def set_state(self, state: str):
         self.state = state
         self.state_timer = 0.0
 
         if state == "login":
             self.login_text = ""
+            self.password_text = ""
             self.keyboard = Keyboard()
+            self.cursor_on = True
+            self.cursor_timer = 0.0
 
         elif state == "password":
             self.password_text = ""
             self.keyboard = Keyboard()
+            self.cursor_on = True
+            self.cursor_timer = 0.0
+
+        elif state == "denied":
+            self.password_text = ""
+            self.keyboard = Keyboard()
+            self.cursor_on = True
+            self.cursor_timer = 0.0
+            beep(220, 220, 0.50)
 
         elif state == "floor":
             self.floor_selected = 1
@@ -273,9 +320,6 @@ class App:
         elif state == "unlocked":
             beep(1200, 160, 0.45)
 
-        elif state == "denied":
-            beep(220, 220, 0.50)
-
     def update_cursor(self, dt):
         self.cursor_timer += dt
         if self.cursor_timer >= 0.42:
@@ -285,7 +329,7 @@ class App:
     def update(self, dt):
         self.state_timer += dt
 
-        if self.state in ("login", "password"):
+        if self.state in ("login", "password", "denied"):
             self.update_cursor(dt)
             self.keyboard.update(dt)
 
@@ -312,26 +356,37 @@ class App:
             if label == "BS":
                 self.login_text = self.login_text[:-1]
                 beep()
+
             elif label == "ENTER":
                 if self.login_text == VALID_LOGIN:
                     beep(1000, 60, 0.35)
                     self.set_state("password")
                 else:
                     self.set_state("denied")
+
             elif len(label) == 1 and len(self.login_text) < 8:
                 self.login_text += label
                 beep()
 
-        elif self.state == "password":
+        elif self.state in ("password", "denied"):
             if label == "BS":
                 self.password_text = self.password_text[:-1]
                 beep()
+
             elif label == "ENTER":
-                if self.password_text == VALID_PASSWORD:
+                if self.password_text == PASSWORD_ADA:
+                    self.unlocked_floors = {random.choice(["B2", "B3"])}
                     beep(1000, 70, 0.40)
                     self.set_state("desktop")
+
+                elif self.password_text == PASSWORD_MOLE:
+                    self.unlocked_floors = {"B2", "B3"}
+                    beep(1000, 70, 0.40)
+                    self.set_state("desktop")
+
                 else:
                     self.set_state("denied")
+
             elif len(label) == 1 and len(self.password_text) < 8:
                 self.password_text += label
                 beep()
@@ -345,13 +400,13 @@ class App:
             return
 
         if event.key == pygame.K_ESCAPE:
-            if self.state in ("login", "password", "floor"):
+            if self.state in ("login", "password", "denied", "floor"):
                 self.set_state("quit")
             else:
                 self.running = False
             return
 
-        if self.state in ("login", "password"):
+        if self.state in ("login", "password", "denied"):
             if event.key == pygame.K_LEFT:
                 self.keyboard.move(-1, 0)
             elif event.key == pygame.K_RIGHT:
@@ -367,15 +422,21 @@ class App:
             if event.key == pygame.K_UP:
                 self.floor_selected = max(0, self.floor_selected - 1)
                 beep()
+
             elif event.key == pygame.K_DOWN:
                 self.floor_selected = min(len(self.floor_options) - 1, self.floor_selected + 1)
                 beep()
+
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 choice = self.floor_options[self.floor_selected]
-                if choice == "B3":
-                    self.set_state("accessing")
-                elif choice == "Cancel":
+
+                if choice == "Cancel":
                     self.set_state("quit")
+
+                elif choice in self.unlocked_floors:
+                    self.last_floor = choice
+                    self.set_state("accessing")
+
                 else:
                     self.set_state("denied")
 
@@ -383,16 +444,18 @@ class App:
             if event.key == pygame.K_UP:
                 self.quit_selected = 0
                 beep()
+
             elif event.key == pygame.K_DOWN:
                 self.quit_selected = 1
                 beep()
+
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.quit_selected == 0:
                     self.running = False
                 else:
                     self.set_state("floor")
 
-        elif self.state in ("unlocked", "denied"):
+        elif self.state == "unlocked":
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self.set_state("floor")
 
@@ -408,12 +471,24 @@ class App:
             if self.cursor_on:
                 txt += "_"
             draw_text(screen, font_mid, txt, WHITE, (125, 220))
+
         else:
             draw_text(screen, font_mid, f"Login: {VALID_LOGIN}", WHITE, (125, 220))
+
             masked = "*" * len(self.password_text)
             if self.cursor_on:
                 masked += "_"
+
             draw_text(screen, font_mid, f"Password: {masked}", WHITE, (125, 280))
+
+    def draw_denied_password_overlay(self):
+        screen.blit(img_denied, (0, 0))
+
+        masked = "*" * len(self.password_text)
+        if self.cursor_on:
+            masked += "_"
+
+        draw_text(screen, font_mid, masked, WHITE, (475, 308))
 
     def draw_floor_overlay(self):
         panel = pygame.Rect(80, 50, 1120, 320)
@@ -432,8 +507,10 @@ class App:
 
         for i, option in enumerate(self.floor_options):
             y = inner.y + 28 + i * 72
+
             if i == self.floor_selected:
                 pygame.draw.rect(screen, GREEN, (inner.x, y - 4, inner.w, 64))
+
             draw_text(screen, font_mid, option, WHITE, (inner.x + 28, y))
 
     def draw_quit_overlay(self):
@@ -446,8 +523,10 @@ class App:
 
         for i, txt in enumerate(["Yes", "No"]):
             y = 445 + i * 78
+
             if i == self.quit_selected:
                 pygame.draw.rect(screen, GREEN, (735, y - 8, 210, 68))
+
             draw_text(screen, font_mid, txt, WHITE, (760, y))
 
     def render(self):
@@ -459,6 +538,10 @@ class App:
         elif self.state == "password":
             screen.blit(img_password, (0, 0))
             self.draw_login_overlay()
+            self.keyboard.draw()
+
+        elif self.state == "denied":
+            self.draw_denied_password_overlay()
             self.keyboard.draw()
 
         elif self.state == "desktop":
@@ -476,9 +559,6 @@ class App:
 
         elif self.state == "unlocked":
             screen.blit(img_unlocked, (0, 0))
-
-        elif self.state == "denied":
-            screen.blit(img_denied, (0, 0))
 
         elif self.state == "quit":
             self.draw_quit_overlay()
