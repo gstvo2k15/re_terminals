@@ -1,8 +1,10 @@
 import sys
+import time
 from pathlib import Path
-from typing import Optional
 
+import cv2
 import pygame
+from ffpyplayer.player import MediaPlayer
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -10,29 +12,7 @@ SCREEN_W = 1280
 SCREEN_H = 720
 FPS = 60
 
-SND_INTRO = BASE_DIR / "PC_re1-terminal_FINAL-beta3.mp3"
-
-FRAME_FILES = [
-    "RE1_oldPc_0.png",
-    "RE1_oldPc_1.png",
-    "RE1_oldPc_2.png",
-    "RE1_oldPc_3.png",
-    "RE1_oldPc_4.png",
-    "RE1_oldPc_5.png",
-    "RE1_oldPc_6.png",
-    "RE1_oldPc_7.png",
-]
-
-FRAME_DURATIONS = [
-    0.55,
-    0.35,
-    0.35,
-    0.40,
-    0.55,
-    1.15,
-    1.35,
-    0.80,
-]
+VIDEO_INTRO = BASE_DIR / "RE1_umbrella_intro.mp4"
 
 FRAME_LOGIN = "RE1_oldPc_8.png"
 FRAME_PASSWORD = "RE1_oldPc_9.png"
@@ -63,10 +43,10 @@ LAVENDER = (176, 178, 230)
 GREEN = (0, 135, 75)
 SHADOW = (30, 30, 70)
 
-font_big = pygame.font.SysFont("couriernew", 62, bold=True)
 font_mid = pygame.font.SysFont("couriernew", 46, bold=True)
-font_small = pygame.font.SysFont("couriernew", 34, bold=True)
 font_key = pygame.font.SysFont("arial", 34, bold=True)
+
+ui_channel = pygame.mixer.Channel(1)
 
 
 def load_image(name: str) -> pygame.Surface:
@@ -77,16 +57,6 @@ def load_image(name: str) -> pygame.Surface:
     return pygame.transform.smoothscale(img, (SCREEN_W, SCREEN_H))
 
 
-def load_sound(path: Path) -> Optional[pygame.mixer.Sound]:
-    if not path.exists():
-        return None
-    try:
-        return pygame.mixer.Sound(str(path))
-    except pygame.error:
-        return None
-
-
-frames = [load_image(name) for name in FRAME_FILES]
 img_login = load_image(FRAME_LOGIN)
 img_password = load_image(FRAME_PASSWORD)
 img_desktop = load_image(FRAME_DESKTOP)
@@ -97,13 +67,6 @@ img_unlocked = load_image(FRAME_UNLOCKED)
 img_denied = load_image(FRAME_DENIED)
 img_quit = load_image(FRAME_QUIT)
 
-snd_intro = load_sound(SND_INTRO)
-if snd_intro:
-    snd_intro.set_volume(1.0)
-
-intro_channel = pygame.mixer.Channel(0)
-ui_channel = pygame.mixer.Channel(1)
-
 
 def beep(freq: int = 900, duration_ms: int = 45, volume: float = 0.35) -> None:
     sample_rate = 44100
@@ -111,7 +74,8 @@ def beep(freq: int = 900, duration_ms: int = 45, volume: float = 0.35) -> None:
     buf = bytearray()
 
     for i in range(samples):
-        value = int(32767 * volume * pygame.math.Vector2(1, 0).rotate(i * freq * 360 / sample_rate).x)
+        t = i / sample_rate
+        value = int(32767 * volume * __import__("math").sin(2 * __import__("math").pi * freq * t))
         buf += int(value).to_bytes(2, byteorder="little", signed=True)
         buf += int(value).to_bytes(2, byteorder="little", signed=True)
 
@@ -120,7 +84,65 @@ def beep(freq: int = 900, duration_ms: int = 45, volume: float = 0.35) -> None:
     ui_channel.play(sound)
 
 
-def draw_scanlines(surface: pygame.Surface, alpha: int = 18, step: int = 2) -> None:
+def play_intro_video(path: Path) -> bool:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing video: {path}")
+
+    cap = cv2.VideoCapture(str(path))
+    player = MediaPlayer(str(path))
+
+    if not cap.isOpened():
+        player.close_player()
+        raise RuntimeError(f"Cannot open video: {path}")
+
+    start_time = time.time()
+    video_fps = cap.get(cv2.CAP_PROP_FPS)
+    if video_fps <= 0:
+        video_fps = 30.0
+
+    frame_index = 0
+    running = True
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                cap.release()
+                player.close_player()
+                return False
+
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
+                    running = False
+
+        target_time = frame_index / video_fps
+        elapsed = time.time() - start_time
+
+        if elapsed < target_time:
+            clock.tick(FPS)
+            continue
+
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        player.get_frame()
+
+        frame_index += 1
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.resize(frame, (SCREEN_W, SCREEN_H))
+
+        surface = pygame.image.frombuffer(frame.tobytes(), (SCREEN_W, SCREEN_H), "RGB")
+        screen.blit(surface, (0, 0))
+        pygame.display.flip()
+
+        clock.tick(FPS)
+
+    cap.release()
+    player.close_player()
+    return True
+
+
+def draw_scanlines(surface: pygame.Surface, alpha: int = 16, step: int = 2) -> None:
     overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
     width, height = surface.get_size()
     for y in range(0, height, step):
@@ -169,12 +191,12 @@ class Keyboard:
         old = (self.row, self.col)
         self.row = max(0, min(len(self.keys) - 1, self.row + dy))
         self.col = max(0, min(len(self.keys[self.row]) - 1, self.col + dx))
+
         moved = old != (self.row, self.col)
         if moved:
             self.blink = True
             self.blink_timer = 0.0
             beep(1100, 35, 0.25)
-        return moved
 
     def current(self):
         return self.keys[self.row][self.col]
@@ -191,20 +213,15 @@ class Keyboard:
         gap = 4
 
         panel = pygame.Rect(start_x - 35, start_y - 35, 860, 380)
-        pygame.draw.rect(screen, (160, 160, 160, 170), panel)
+        pygame.draw.rect(screen, (160, 160, 160), panel)
         pygame.draw.rect(screen, BLACK, panel, 3)
 
         for r, row in enumerate(self.keys):
             for c, label in enumerate(row):
                 x = start_x + c * (cell_w + gap)
                 y = start_y + r * (cell_h + gap)
-                w = cell_w
+                w = 150 if label == "ENTER" else 145 if label == "BS" else cell_w
                 h = cell_h
-
-                if label == "ENTER":
-                    w = 150
-                elif label == "BS":
-                    w = 145
 
                 rect = pygame.Rect(x, y, w, h)
                 selected = r == self.row and c == self.col
@@ -222,15 +239,10 @@ class Keyboard:
 class App:
     def __init__(self):
         self.running = True
-        self.state = "intro"
+        self.state = "login"
         self.state_timer = 0.0
 
-        self.frame_index = 0
-        self.frame_timer = 0.0
-        self.intro_started = False
-
         self.keyboard = Keyboard()
-
         self.login_text = ""
         self.password_text = ""
         self.cursor_timer = 0.0
@@ -238,7 +250,6 @@ class App:
 
         self.floor_options = ["B2", "B3", "Cancel"]
         self.floor_selected = 1
-
         self.quit_selected = 1
 
     def set_state(self, state: str):
@@ -265,22 +276,6 @@ class App:
         elif state == "denied":
             beep(220, 220, 0.50)
 
-    def update_intro(self, dt):
-        if not self.intro_started:
-            self.intro_started = True
-            if snd_intro:
-                intro_channel.play(snd_intro)
-
-        self.frame_timer += dt
-
-        if self.frame_index < len(frames):
-            if self.frame_timer >= FRAME_DURATIONS[self.frame_index]:
-                self.frame_timer = 0.0
-                self.frame_index += 1
-
-        if self.frame_index >= len(frames):
-            self.set_state("login")
-
     def update_cursor(self, dt):
         self.cursor_timer += dt
         if self.cursor_timer >= 0.42:
@@ -290,10 +285,7 @@ class App:
     def update(self, dt):
         self.state_timer += dt
 
-        if self.state == "intro":
-            self.update_intro(dt)
-
-        elif self.state in ("login", "password"):
+        if self.state in ("login", "password"):
             self.update_cursor(dt)
             self.keyboard.update(dt)
 
@@ -408,17 +400,15 @@ class App:
         panel = pygame.Rect(85, 48, 1110, 330)
         draw_blue_panel(panel)
 
+        draw_text(screen, font_mid, "Umbrella Computer OS ROPLS™", WHITE, (125, 95))
+        draw_text(screen, font_mid, "Copyright©  Umbrella Corp.", WHITE, (125, 155))
+
         if self.state == "login":
-            draw_text(screen, font_mid, "Umbrella Computer OS ROPLS™", WHITE, (125, 95))
-            draw_text(screen, font_mid, "Copyright©  Umbrella Corp.", WHITE, (125, 155))
             txt = f"Login: {self.login_text}"
             if self.cursor_on:
                 txt += "_"
             draw_text(screen, font_mid, txt, WHITE, (125, 220))
-
         else:
-            draw_text(screen, font_mid, "Umbrella Computer OS ROPLS™", WHITE, (125, 95))
-            draw_text(screen, font_mid, "Copyright©  Umbrella Corp.", WHITE, (125, 155))
             draw_text(screen, font_mid, f"Login: {VALID_LOGIN}", WHITE, (125, 220))
             masked = "*" * len(self.password_text)
             if self.cursor_on:
@@ -454,19 +444,14 @@ class App:
 
         draw_text(screen, font_mid, "Quit?", WHITE, (760, 315))
 
-        options = ["Yes", "No"]
-        for i, txt in enumerate(options):
+        for i, txt in enumerate(["Yes", "No"]):
             y = 445 + i * 78
             if i == self.quit_selected:
                 pygame.draw.rect(screen, GREEN, (735, y - 8, 210, 68))
             draw_text(screen, font_mid, txt, WHITE, (760, y))
 
     def render(self):
-        if self.state == "intro":
-            idx = min(self.frame_index, len(frames) - 1)
-            screen.blit(frames[idx], (0, 0))
-
-        elif self.state == "login":
+        if self.state == "login":
             screen.blit(img_login, (0, 0))
             self.draw_login_overlay()
             self.keyboard.draw()
@@ -498,7 +483,7 @@ class App:
         elif self.state == "quit":
             self.draw_quit_overlay()
 
-        draw_scanlines(screen, alpha=16, step=2)
+        draw_scanlines(screen)
 
         flicker = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
         flicker.fill((0, 0, 0, 5))
@@ -507,6 +492,9 @@ class App:
         pygame.display.flip()
 
     def run(self):
+        if not play_intro_video(VIDEO_INTRO):
+            return
+
         while self.running:
             dt = clock.tick(FPS) / 1000.0
 
@@ -516,7 +504,6 @@ class App:
             self.update(dt)
             self.render()
 
-        intro_channel.stop()
         ui_channel.stop()
 
 
