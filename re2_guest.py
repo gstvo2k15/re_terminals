@@ -1,7 +1,8 @@
-import sys
 from pathlib import Path
 
 import pygame
+
+from terminal_common import audio_channel, draw_scanlines, initialize_pygame, load_sound
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -19,13 +20,6 @@ SND_FINISH = BASE_DIR / "safsprin_finish_passwd_pc.mp3"
 
 VALID_USERNAME = "GUEST"
 
-pygame.mixer.pre_init(44100, -16, 2, 512)
-pygame.init()
-pygame.mixer.init()
-
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption("Resident Evil 2 - Guest Terminal")
-clock = pygame.time.Clock()
 
 WHITE_DIRTY = (236, 236, 236)
 SHADOW = (38, 38, 38)
@@ -38,45 +32,12 @@ KEY_FILL_BLINK_HIGH = (188, 188, 188)
 KEY_TEXT = (68, 68, 68)
 BLACK = (0, 0, 0)
 
-font_title = pygame.font.SysFont("couriernew", 26, bold=True)
-font_term = pygame.font.SysFont("couriernew", 34, bold=True)
-font_key = pygame.font.SysFont("arial", 24, bold=True)
-font_key_small = pygame.font.SysFont("arial", 16, bold=True)
-
-typing_channel = pygame.mixer.Channel(0)
-ui_channel = pygame.mixer.Channel(1)
-finish_channel = pygame.mixer.Channel(2)
-
 
 def load_image(path: Path) -> pygame.Surface:
     if not path.exists():
         raise FileNotFoundError(f"Missing file: {path}")
     img = pygame.image.load(str(path)).convert()
     return pygame.transform.smoothscale(img, (SCREEN_W, SCREEN_H))
-
-
-def load_sound(path: Path):
-    if not path.exists():
-        raise FileNotFoundError(f"Missing sound file: {path}")
-    try:
-        return pygame.mixer.Sound(str(path))
-    except pygame.error as e:
-        raise RuntimeError(f"Cannot load sound {path}: {e}")
-
-
-bg = load_image(BG_IMAGE)
-
-snd_open = load_sound(SND_OPEN)
-snd_letters = load_sound(SND_LETTERS)
-snd_choose = load_sound(SND_CHOOSE)
-snd_enter = load_sound(SND_ENTER)
-snd_finish = load_sound(SND_FINISH)
-
-snd_open.set_volume(1.0)
-snd_letters.set_volume(1.0)
-snd_choose.set_volume(0.75)
-snd_enter.set_volume(0.85)
-snd_finish.set_volume(1.0)
 
 
 def play_enter():
@@ -104,14 +65,6 @@ def lerp(a_val, b_val, factor):
 def ease_out_cubic(factor):
     factor = max(0.0, min(1.0, factor))
     return 1 - pow(1 - factor, 3)
-
-
-def draw_scanlines(surface, alpha=18, step=2):
-    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-    width, height = surface.get_size()
-    for y_pos in range(0, height, step):
-        pygame.draw.line(overlay, (0, 0, 0, alpha), (0, y_pos), (width, y_pos))
-    surface.blit(overlay, (0, 0))
 
 
 def build_scene_base():
@@ -229,38 +182,8 @@ class KeyboardWindow:
         old_row = self.row
         old_col = self.col
 
-        if dy != 0:
-            if self._is_enter_selected():
-                if dy < 0:
-                    self.row = 0
-                    self.col = 8
-                elif dy > 0:
-                    self.row = 2
-                    self.col = 9
-            else:
-                target_row = max(0, min(2, self.row + dy))
-                if self.row == 1 and self.col == 9 and dy > 0:
-                    self.row = 2
-                    self.col = 9
-                else:
-                    self.row = target_row
-
-        if dx != 0:
-            if self.row == 2 and self.col == 8 and dx > 0:
-                self.row = 2
-                self.col = 9
-            elif self._is_enter_selected() and dx < 0:
-                self.row = 2
-                self.col = 8
-            else:
-                self.col = max(0, min(9, self.col + dx))
-                if self.row == 0 and self.col == 9:
-                    self.col = 8
-                if self.row == 2 and self.col == 9 and dx > 0:
-                    self.col = 9
-
-        if self.row == 0 and self.col == 9:
-            self.col = 8
+        self.row = max(0, min(len(self.grid) - 1, self.row + dy))
+        self.col = max(0, min(len(self.grid[self.row]) - 1, self.col + dx))
 
         moved = old_row != self.row or old_col != self.col
         if moved:
@@ -424,9 +347,6 @@ class App:
         self.flash_timer = 0.0
         self.flash_alpha = 0
 
-        self.finish_waiting_to_start = False
-        self.finish_has_started_playing = False
-
         self.result_phase = 0
         self.result_pause_timer = 0.0
         self.result_line_sound_duration = max(snd_letters.get_length(), 0.16)
@@ -580,8 +500,6 @@ class App:
         elif new_state == "submitting":
             self.input_locked = True
             self.input_line_active = False
-            self.finish_waiting_to_start = True
-            self.finish_has_started_playing = False
             play_finish()
 
         elif new_state == "typing_result":
@@ -723,14 +641,11 @@ class App:
             self.keyboard.update(dt)
 
         elif self.state == "submitting":
-            if self.finish_waiting_to_start:
-                if finish_channel.get_busy():
-                    self.finish_waiting_to_start = False
-                    self.finish_has_started_playing = True
-            elif self.finish_has_started_playing:
-                if not finish_channel.get_busy():
-                    self.finish_has_started_playing = False
-                    self.set_state("typing_result")
+            # Playback starts synchronously; it may finish between updates.
+            if (not finish_channel.get_busy()
+                    or self.state_timer >= snd_finish.get_length() + 0.5):
+                finish_channel.stop()
+                self.set_state("typing_result")
 
         elif self.state == "typing_result":
             if self.result_pause_timer > 0:
@@ -772,7 +687,6 @@ class App:
             y_pos += line_height
 
     def render(self):
-        scene_base = build_scene_base()
         screen.blit(scene_base, (0, 0))
 
         if self.state == "selector":
@@ -807,6 +721,8 @@ class App:
             for event in pygame.event.get():
                 self.handle_event(event)
 
+            if not self.running:
+                break
             self.update(dt)
             self.render()
 
@@ -815,9 +731,57 @@ class App:
         finish_channel.stop()
 
 
-if __name__ == "__main__":
+def initialize_resources():
+    """Load resources explicitly, once per application run."""
+    global screen
+    global clock
+    global font_title
+    global font_term
+    global font_key
+    global font_key_small
+    global typing_channel
+    global ui_channel
+    global finish_channel
+    global bg
+    global snd_open
+    global snd_letters
+    global snd_choose
+    global snd_enter
+    global snd_finish
+    global scene_base
+
+    initialize_pygame()
+    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    pygame.display.set_caption("Resident Evil 2 - Guest Terminal")
+    clock = pygame.time.Clock()
+    font_title = pygame.font.SysFont("couriernew", 26, bold=True)
+    font_term = pygame.font.SysFont("couriernew", 34, bold=True)
+    font_key = pygame.font.SysFont("arial", 24, bold=True)
+    font_key_small = pygame.font.SysFont("arial", 16, bold=True)
+    typing_channel = audio_channel(0)
+    ui_channel = audio_channel(1)
+    finish_channel = audio_channel(2)
+    bg = load_image(BG_IMAGE)
+    snd_open = load_sound(SND_OPEN)
+    snd_letters = load_sound(SND_LETTERS)
+    snd_choose = load_sound(SND_CHOOSE)
+    snd_enter = load_sound(SND_ENTER)
+    snd_finish = load_sound(SND_FINISH)
+    snd_open.set_volume(1.0)
+    snd_letters.set_volume(1.0)
+    snd_choose.set_volume(0.75)
+    snd_enter.set_volume(0.85)
+    snd_finish.set_volume(1.0)
+    scene_base = build_scene_base()
+
+
+def main():
     try:
+        initialize_resources()
         App().run()
     finally:
         pygame.quit()
-        sys.exit()
+
+
+if __name__ == "__main__":
+    main()

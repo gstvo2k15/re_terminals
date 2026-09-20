@@ -1,8 +1,10 @@
-import sys
 from pathlib import Path
-from typing import Optional
 
 import pygame
+
+from terminal_common import (
+    SilentSound, audio_channel, draw_scanlines, initialize_pygame, load_sound,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -16,12 +18,6 @@ SND_ACCEPT = BASE_DIR / "accept.mp3"
 SND_WAITING = BASE_DIR / "beep_waitting.mp3"
 SND_MAIN = BASE_DIR / "beep_main.mp3"
 
-pygame.init()
-pygame.mixer.init()
-
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption("Door Lock Service")
-clock = pygame.time.Clock()
 
 WHITE_DIRTY = (230, 232, 228)
 WHITE_SOFT = (200, 202, 198)
@@ -41,31 +37,7 @@ def load_image(path: Path) -> pygame.Surface:
     return pygame.transform.smoothscale(img, (SCREEN_W, SCREEN_H))
 
 
-def load_sound(path: Path) -> Optional[pygame.mixer.Sound]:
-    if not path.exists():
-        return None
-    try:
-        return pygame.mixer.Sound(str(path))
-    except pygame.error:
-        return None
-
-
-bg = load_image(BG_IMAGE)
-
-snd_accept = load_sound(SND_ACCEPT)
-snd_waiting = load_sound(SND_WAITING)
-snd_main = load_sound(SND_MAIN)
-
-wait_channel = pygame.mixer.Channel(1)
-type_channel = pygame.mixer.Channel(2)
-
-font_title = pygame.font.SysFont("couriernew", 28, bold=True)
-font_term = pygame.font.SysFont("couriernew", 30, bold=True)
-font_prompt = pygame.font.SysFont("couriernew", 26, bold=True)
-font_choice = pygame.font.SysFont("couriernew", 34, bold=True)
-
-
-def play_sound(sound: Optional[pygame.mixer.Sound], loops: int = 0) -> None:
+def play_sound(sound: pygame.mixer.Sound | SilentSound, loops: int = 0) -> None:
     if sound:
         sound.play(loops=loops)
 
@@ -103,18 +75,6 @@ def draw_arrow(surface: pygame.Surface, x_pos: int, y_pos: int) -> None:
     points = [(x_pos, y_pos), (x_pos + 14, y_pos + 8), (x_pos, y_pos + 16)]
     pygame.draw.polygon(surface, WHITE_DIRTY, points)
     pygame.draw.polygon(surface, SHADOW, points, 1)
-
-
-def draw_scanlines(
-    surface: pygame.Surface,
-    alpha: int = 18,
-    step: int = 2,
-) -> None:
-    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-    width, height = surface.get_size()
-    for y_pos in range(0, height, step):
-        pygame.draw.line(overlay, (0, 0, 0, alpha), (0, y_pos), (width, y_pos))
-    surface.blit(overlay, (0, 0))
 
 
 def build_scene_base() -> pygame.Surface:
@@ -469,6 +429,10 @@ class App:
             if self.state_timer >= 2.8:
                 self.set_state("done")
 
+        elif self.state == "closing":
+            if self.state_timer >= 0.35:
+                self.running = False
+
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type == pygame.QUIT:
             self.running = False
@@ -498,15 +462,14 @@ class App:
                     else:
                         if snd_accept:
                             snd_accept.play()
-                            pygame.time.delay(350)
-                        self.running = False
+                        self.set_state("closing")
 
             elif self.state == "done":
                 if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     self.running = False
 
     def draw_subtitle(self) -> None:
-        if self.state in ("question", "checking", "done"):
+        if self.state in ("question", "checking", "done", "closing"):
             return
 
         draw_shadow_text(
@@ -519,7 +482,7 @@ class App:
         )
 
     def draw_lines(self, inner_rect: pygame.Rect) -> None:
-        if self.state in ("typing", "pause_before_question", "question"):
+        if self.state in ("typing", "pause_before_question", "question", "closing"):
             items = self.visible_lines
         else:
             items = self.build_lines_for_current_state()
@@ -580,7 +543,6 @@ class App:
             draw_shadow_text(screen, font_prompt, "UNLOCKED", GREEN_TEXT, GREEN_DARK, (360, SCREEN_H - 112))
 
     def render(self) -> None:
-        scene_base = build_scene_base()
         screen.blit(scene_base, (0, 0))
 
         if self.state != "idle_bg":
@@ -590,7 +552,7 @@ class App:
             if rect.w > 300 and rect.h > 140 and self.state != "grow":
                 self.draw_lines(inner_rect)
 
-            if self.state == "question":
+            if self.state in ("question", "closing"):
                 self.draw_question()
             elif self.state in ("checking", "done"):
                 self.draw_bottom_status()
@@ -611,14 +573,54 @@ class App:
             for event in pygame.event.get():
                 self.handle_event(event)
 
+            if not self.running:
+                break
             self.update(dt)
             self.render()
 
         wait_channel.stop()
 
 
+def initialize_resources():
+    """Load resources explicitly, once per application run."""
+    global screen
+    global clock
+    global bg
+    global snd_accept
+    global snd_waiting
+    global snd_main
+    global wait_channel
+    global type_channel
+    global font_title
+    global font_term
+    global font_prompt
+    global font_choice
+    global scene_base
+
+    initialize_pygame()
+    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    pygame.display.set_caption("Door Lock Service")
+    clock = pygame.time.Clock()
+    bg = load_image(BG_IMAGE)
+    snd_accept = load_sound(SND_ACCEPT)
+    snd_waiting = load_sound(SND_WAITING)
+    snd_main = load_sound(SND_MAIN)
+    wait_channel = audio_channel(1)
+    type_channel = audio_channel(2)
+    font_title = pygame.font.SysFont("couriernew", 28, bold=True)
+    font_term = pygame.font.SysFont("couriernew", 30, bold=True)
+    font_prompt = pygame.font.SysFont("couriernew", 26, bold=True)
+    font_choice = pygame.font.SysFont("couriernew", 34, bold=True)
+    scene_base = build_scene_base()
+
+
+def main():
+    try:
+        initialize_resources()
+        App().run()
+    finally:
+        pygame.quit()
+
+
 if __name__ == "__main__":
-    app = App()
-    app.run()
-    pygame.quit()
-    sys.exit()
+    main()

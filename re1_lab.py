@@ -1,4 +1,3 @@
-import sys
 import time
 import math
 import random
@@ -7,6 +6,8 @@ from pathlib import Path
 import cv2
 import pygame
 from ffpyplayer.player import MediaPlayer
+
+from terminal_common import audio_channel, draw_scanlines, initialize_pygame
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -21,7 +22,9 @@ FRAME_PASSWORD = "RE1_oldPc_9.png"
 FRAME_DESKTOP = "RE1_oldPc_10.png"
 FRAME_FLOOR = "RE1_oldPc_11.png"
 FRAME_ACCESSING = "RE1_oldPc_12.png"
+FRAME_MAP_B2 = "RE1_oldPc_13b.png"
 FRAME_MAP_B3 = "RE1_oldPc_13.png"
+FRAME_UNLOCKED_B2 = "RE1_oldPc_13c.png"
 FRAME_UNLOCKED = "RE1_oldPc_14.png"
 FRAME_DENIED = "RE1_oldPc_15.png"
 FRAME_QUIT = "RE1_oldPc_16.png"
@@ -30,13 +33,6 @@ VALID_LOGIN = "JOHN"
 PASSWORD_ADA = "ADA"
 PASSWORD_MOLE = "MOLE"
 
-pygame.mixer.pre_init(44100, -16, 2, 512)
-pygame.init()
-pygame.mixer.init()
-
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption("Resident Evil 1 - Umbrella Terminal")
-clock = pygame.time.Clock()
 
 WHITE = (245, 245, 245)
 BLACK = (0, 0, 0)
@@ -45,11 +41,6 @@ BLUE_DARK = (20, 30, 135)
 LAVENDER = (176, 178, 230)
 GREEN = (0, 135, 75)
 SHADOW = (30, 30, 70)
-
-font_mid = pygame.font.SysFont("couriernew", 46, bold=True)
-font_key = pygame.font.SysFont("arial", 34, bold=True)
-
-ui_channel = pygame.mixer.Channel(1)
 
 
 def load_image(name: str) -> pygame.Surface:
@@ -60,18 +51,9 @@ def load_image(name: str) -> pygame.Surface:
     return pygame.transform.smoothscale(img, (SCREEN_W, SCREEN_H))
 
 
-img_login = load_image(FRAME_LOGIN)
-img_password = load_image(FRAME_PASSWORD)
-img_desktop = load_image(FRAME_DESKTOP)
-img_floor = load_image(FRAME_FLOOR)
-img_accessing = load_image(FRAME_ACCESSING)
-img_map_b3 = load_image(FRAME_MAP_B3)
-img_unlocked = load_image(FRAME_UNLOCKED)
-img_denied = load_image(FRAME_DENIED)
-img_quit = load_image(FRAME_QUIT)
-
-
 def beep(freq: int = 900, duration_ms: int = 45, volume: float = 0.35) -> None:
+    if pygame.mixer.get_init() is None:
+        return
     sample_rate = 44100
     samples = int(sample_rate * duration_ms / 1000)
     buf = bytearray()
@@ -92,71 +74,54 @@ def play_intro_video(path: Path) -> bool:
         raise FileNotFoundError(f"Missing video: {path}")
 
     cap = cv2.VideoCapture(str(path))
-    player = MediaPlayer(str(path))
+    player = None
+    try:
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open video: {path}")
+        if pygame.mixer.get_init() is not None:
+            player = MediaPlayer(str(path))
 
-    if not cap.isOpened():
-        player.close_player()
-        raise RuntimeError(f"Cannot open video: {path}")
+        start_time = time.monotonic()
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if not math.isfinite(video_fps) or video_fps <= 0:
+            video_fps = 30.0
+        frame_index = 0
 
-    start_time = time.time()
-    video_fps = cap.get(cv2.CAP_PROP_FPS)
-    if video_fps <= 0:
-        video_fps = 30.0
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN and event.key in (
+                    pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE
+                ):
+                    return True
 
-    frame_index = 0
-    running = True
+            target_time = frame_index / video_fps
+            if time.monotonic() - start_time < target_time:
+                clock.tick(FPS)
+                continue
 
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                cap.release()
-                player.close_player()
-                return False
+            ok, frame = cap.read()
+            if not ok:
+                return True
+            if player is not None:
+                player.get_frame()
 
-            if event.type == pygame.KEYDOWN:
-                if event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
-                    running = False
-
-        target_time = frame_index / video_fps
-        elapsed = time.time() - start_time
-
-        if elapsed < target_time:
+            frame_index += 1
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = cv2.resize(frame, (SCREEN_W, SCREEN_H))
+            surface = pygame.image.frombuffer(
+                frame.tobytes(), (SCREEN_W, SCREEN_H), "RGB"
+            )
+            screen.blit(surface, (0, 0))
+            pygame.display.flip()
             clock.tick(FPS)
-            continue
-
-        ok, frame = cap.read()
-        if not ok:
-            break
-
-        player.get_frame()
-
-        frame_index += 1
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = cv2.resize(frame, (SCREEN_W, SCREEN_H))
-
-        surface = pygame.image.frombuffer(
-            frame.tobytes(),
-            (SCREEN_W, SCREEN_H),
-            "RGB",
-        )
-        screen.blit(surface, (0, 0))
-        pygame.display.flip()
-
-        clock.tick(FPS)
-
-    cap.release()
-    player.close_player()
-    return True
-
-
-def draw_scanlines(surface: pygame.Surface, alpha: int = 16, step: int = 2) -> None:
-    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-    width, height = surface.get_size()
-
-    for y in range(0, height, step):
-        pygame.draw.line(overlay, (0, 0, 0, alpha), (0, y), (width, y))
-
-    surface.blit(overlay, (0, 0))
+    finally:
+        try:
+            cap.release()
+        finally:
+            if player is not None:
+                player.close_player()
 
 
 def draw_text(surface, font, text, color, pos):
@@ -283,15 +248,20 @@ class App:
         self.floor_options = ["B2", "B3", "Cancel"]
         self.floor_selected = 1
         self.quit_selected = 1
+        self.quit_return_state = ("login", 0.0)
 
         self.unlocked_floors = set()
         self.last_floor = "B3"
 
     def set_state(self, state: str):
+        if state == "quit":
+            self.quit_return_state = (self.state, self.state_timer)
+            self.quit_selected = 1
         self.state = state
         self.state_timer = 0.0
 
         if state == "login":
+            self.unlocked_floors.clear()
             self.login_text = ""
             self.password_text = ""
             self.keyboard = Keyboard()
@@ -374,6 +344,9 @@ class App:
                 beep()
 
             elif label == "ENTER":
+                if self.login_text != VALID_LOGIN:
+                    self.set_state("login")
+                    return
                 if self.password_text == PASSWORD_ADA:
                     self.unlocked_floors = {random.choice(["B2", "B3"])}
                     beep(1000, 70, 0.40)
@@ -453,7 +426,7 @@ class App:
                 if self.quit_selected == 0:
                     self.running = False
                 else:
-                    self.set_state("floor")
+                    self.state, self.state_timer = self.quit_return_state
 
         elif self.state == "unlocked":
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
@@ -555,15 +528,15 @@ class App:
             screen.blit(img_accessing, (0, 0))
 
         elif self.state == "map_b3":
-            screen.blit(img_map_b3, (0, 0))
+            screen.blit(img_map_b2 if self.last_floor == "B2" else img_map_b3, (0, 0))
 
         elif self.state == "unlocked":
-            screen.blit(img_unlocked, (0, 0))
+            screen.blit(img_unlocked_b2 if self.last_floor == "B2" else img_unlocked, (0, 0))
 
         elif self.state == "quit":
             self.draw_quit_overlay()
 
-        draw_scanlines(screen)
+        draw_scanlines(screen, alpha=16)
 
         flicker = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
         flicker.fill((0, 0, 0, 5))
@@ -581,15 +554,60 @@ class App:
             for event in pygame.event.get():
                 self.handle_event(event)
 
+            if not self.running:
+                break
             self.update(dt)
             self.render()
 
         ui_channel.stop()
 
 
-if __name__ == "__main__":
+def initialize_resources():
+    """Load resources explicitly, once per application run."""
+    global screen
+    global clock
+    global font_mid
+    global font_key
+    global ui_channel
+    global img_login
+    global img_password
+    global img_desktop
+    global img_floor
+    global img_accessing
+    global img_map_b2
+    global img_map_b3
+    global img_unlocked_b2
+    global img_unlocked
+    global img_denied
+    global img_quit
+
+    initialize_pygame()
+    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    pygame.display.set_caption("Resident Evil 1 - Umbrella Terminal")
+    clock = pygame.time.Clock()
+    font_mid = pygame.font.SysFont("couriernew", 46, bold=True)
+    font_key = pygame.font.SysFont("arial", 34, bold=True)
+    ui_channel = audio_channel(1)
+    img_login = load_image(FRAME_LOGIN)
+    img_password = load_image(FRAME_PASSWORD)
+    img_desktop = load_image(FRAME_DESKTOP)
+    img_floor = load_image(FRAME_FLOOR)
+    img_accessing = load_image(FRAME_ACCESSING)
+    img_map_b2 = load_image(FRAME_MAP_B2)
+    img_map_b3 = load_image(FRAME_MAP_B3)
+    img_unlocked_b2 = load_image(FRAME_UNLOCKED_B2)
+    img_unlocked = load_image(FRAME_UNLOCKED)
+    img_denied = load_image(FRAME_DENIED)
+    img_quit = load_image(FRAME_QUIT)
+
+
+def main():
     try:
+        initialize_resources()
         App().run()
     finally:
         pygame.quit()
-        sys.exit()
+
+
+if __name__ == "__main__":
+    main()
