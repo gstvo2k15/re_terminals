@@ -461,7 +461,7 @@ class App:
         if self.cursor_on:
             masked += "_"
 
-        draw_text(screen, font_mid, masked, WHITE, (475, 308))
+        draw_text(screen, font_mid, masked, WHITE, (475, 225))
 
     def draw_floor_overlay(self):
         panel = pygame.Rect(80, 50, 1120, 320)
