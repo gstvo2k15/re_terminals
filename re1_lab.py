@@ -198,7 +198,7 @@ class Keyboard:
                 y = start_y + r * (cell_h + gap)
 
                 if label == "ENTER":
-                    w = 150
+                    w = 124
                 elif label == "BS":
                     w = 145
                 else:
