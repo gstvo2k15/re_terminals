@@ -1,8 +1,9 @@
-import sys
 import random
 from pathlib import Path
 
 import pygame
+
+from terminal_common import audio_channel, draw_scanlines, initialize_pygame, load_sound
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -17,12 +18,6 @@ SND_WAITING = BASE_DIR / "beep_waitting.mp3"
 
 PASSWORD_OPTIONS = ["0131", "0513", "4011", "4312"]
 
-pygame.init()
-pygame.mixer.init()
-
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption("Resident Evil 3 - STARS Notice")
-clock = pygame.time.Clock()
 
 WHITE_DIRTY = (230, 232, 228)
 SHADOW = (70, 74, 90)
@@ -41,27 +36,6 @@ def load_image(path: Path) -> pygame.Surface:
         raise FileNotFoundError(f"Missing file: {path}")
     img = pygame.image.load(str(path)).convert()
     return pygame.transform.smoothscale(img, (SCREEN_W, SCREEN_H))
-
-
-def load_sound(path: Path):
-    if not path.exists():
-        return None
-    try:
-        return pygame.mixer.Sound(str(path))
-    except pygame.error:
-        return None
-
-
-bg = load_image(BG_IMAGE)
-
-snd_main = load_sound(SND_MAIN)
-snd_waiting = load_sound(SND_WAITING)
-
-type_channel = pygame.mixer.Channel(2)
-wait_channel = pygame.mixer.Channel(3)
-
-font_title = pygame.font.SysFont("couriernew", 28, bold=True)
-font_term = pygame.font.SysFont("couriernew", 30, bold=True)
 
 
 def play_sound(sound, loops=0):
@@ -98,14 +72,6 @@ def lerp(a, b, t):
 def ease_out_cubic(t):
     t = max(0.0, min(1.0, t))
     return 1 - pow(1 - t, 3)
-
-
-def draw_scanlines(surface, alpha=18, step=2):
-    overlay = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-    w, h = surface.get_size()
-    for y in range(0, h, step):
-        pygame.draw.line(overlay, (0, 0, 0, alpha), (0, y), (w, y))
-    surface.blit(overlay, (0, 0))
 
 
 def build_scene_base() -> pygame.Surface:
@@ -492,7 +458,6 @@ class App:
             y += line_h
 
     def render(self):
-        scene_base = build_scene_base()
         screen.blit(scene_base, (0, 0))
 
         if self.state != "idle_bg":
@@ -517,14 +482,48 @@ class App:
             for event in pygame.event.get():
                 self.handle_event(event)
 
+            if not self.running:
+                break
             self.update(dt)
             self.render()
 
         stop_waiting_sound()
 
 
+def initialize_resources():
+    """Load resources explicitly, once per application run."""
+    global screen
+    global clock
+    global bg
+    global snd_main
+    global snd_waiting
+    global type_channel
+    global wait_channel
+    global font_title
+    global font_term
+    global scene_base
+
+    initialize_pygame()
+    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    pygame.display.set_caption("Resident Evil 3 - STARS Notice")
+    clock = pygame.time.Clock()
+    bg = load_image(BG_IMAGE)
+    snd_main = load_sound(SND_MAIN)
+    snd_waiting = load_sound(SND_WAITING)
+    type_channel = audio_channel(2)
+    wait_channel = audio_channel(3)
+    font_title = pygame.font.SysFont("couriernew", 28, bold=True)
+    font_term = pygame.font.SysFont("couriernew", 30, bold=True)
+    scene_base = build_scene_base()
+
+
+def main():
+    try:
+        initialize_resources()
+        App().run()
+    finally:
+        pygame.quit()
+
+
 if __name__ == "__main__":
-    app = App()
-    app.run()
-    pygame.quit()
-    sys.exit()
+    main()
