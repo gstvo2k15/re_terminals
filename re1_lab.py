@@ -79,7 +79,7 @@ def play_intro_video(path: Path) -> bool:
         if not cap.isOpened():
             raise RuntimeError(f"Cannot open video: {path}")
         if pygame.mixer.get_init() is not None:
-            player = MediaPlayer(str(path))
+            player = MediaPlayer(str(path), ff_opts={"vn": True, "autoexit": True})
 
         start_time = time.monotonic()
         video_fps = cap.get(cv2.CAP_PROP_FPS)
@@ -104,9 +104,6 @@ def play_intro_video(path: Path) -> bool:
             ok, frame = cap.read()
             if not ok:
                 return True
-            if player is not None:
-                player.get_frame()
-
             frame_index += 1
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame = cv2.resize(frame, (SCREEN_W, SCREEN_H))

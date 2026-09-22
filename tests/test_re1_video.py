@@ -47,12 +47,15 @@ class VideoTests(unittest.TestCase):
             capture.return_value.read.assert_not_called()
             capture.return_value.release.assert_called_once()
 
-    def test_real_video_frame_renders_and_quit_closes_player(self):
+    def test_real_video_frame_uses_audio_only_player_and_quit_closes_it(self):
         quit_event = terminal.pygame.event.Event(terminal.pygame.QUIT)
         with patch.object(terminal, "MediaPlayer") as player:
             with patch.object(terminal.pygame.event, "get", side_effect=[[], [quit_event]]):
                 self.assertFalse(terminal.play_intro_video(terminal.VIDEO_INTRO))
-            player.return_value.get_frame.assert_called_once()
+            player.assert_called_once_with(
+                str(terminal.VIDEO_INTRO), ff_opts={"vn": True, "autoexit": True}
+            )
+            player.return_value.get_frame.assert_not_called()
             player.return_value.close_player.assert_called_once()
 
 
