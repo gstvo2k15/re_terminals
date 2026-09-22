@@ -246,8 +246,19 @@ class KeyboardWindow:
                     txt_rect = txt_surface.get_rect(center=rect.center)
                     surface.blit(txt_surface, txt_rect)
                 elif label == "ENTER":
-                    pygame.draw.line(surface, KEY_TEXT, (rect.centerx + 14, rect.bottom - 20), (rect.centerx - 6, rect.bottom - 20), 4)
-                    pygame.draw.line(surface, KEY_TEXT, (rect.centerx - 6, rect.bottom - 20), (rect.centerx + 14, rect.bottom - 40), 4)
+                    txt_surface = font_key_small.render("ENTER", True, KEY_TEXT)
+                    surface.blit(txt_surface, txt_surface.get_rect(center=(rect.centerx, rect.centery - 18)))
+                    arrow_y = rect.centery + 17
+                    pygame.draw.lines(surface, KEY_TEXT, False, [
+                        (rect.centerx + 15, arrow_y - 13),
+                        (rect.centerx + 15, arrow_y),
+                        (rect.centerx - 15, arrow_y),
+                    ], 4)
+                    pygame.draw.lines(surface, KEY_TEXT, False, [
+                        (rect.centerx - 7, arrow_y - 8),
+                        (rect.centerx - 15, arrow_y),
+                        (rect.centerx - 7, arrow_y + 8),
+                    ], 4)
                 else:
                     txt_surface = font_key.render(label, True, KEY_TEXT)
                     txt_rect = txt_surface.get_rect(center=rect.center)
